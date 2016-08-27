@@ -9,6 +9,7 @@ You can choose to calibrate the following parameters:
 """
 
 import math
+import logging
 
 deg2rad = math.pi / 180
 
@@ -67,6 +68,10 @@ class DeltaParameters(object):
         self.yadj = yadj
         self.zadj = zadj
         self.recalc()
+
+    def __init__(self, delta_params):
+        self.__init__(0, 0, 0, 0, 0, 0, 0, 0, 0)
+        self.clone(delta_params)
 
     def transform(self, machine_pos, axis):
         return machine_pos[2] + math.sqrt(self.D2 - (machine_pos[0] - self.tower_x[axis])**2 - (machine_pos[1] - self.tower_y[axis])**2)
@@ -213,6 +218,201 @@ class DeltaParameters(object):
         height_error = self.homed_carriage_height + self.xstop - old_carriage_height_A - v[0]
         self.homed_height -= height_error
         self.homed_carriage_height -= height_error
+
+    def clone(self, source_deltaparams):
+        self.__dict__.update(source_deltaparams.__dict__)
+        self.recalc()
+
+
+class Tuner(object):
+    def __init__(self, old_rod_length, old_radius, old_homed_height, old_xstop, old_ystop, old_zstop,
+                 old_xpos, old_ypos, old_zpos):
+        self.num_factors = 6
+        self.num_points = 7
+        self.x_bed_probe_points = []
+        self.y_bed_probe_points = []
+        self.z_bed_probe_points = []
+        self.probe_points_set = False
+        self.normalise = True
+        self.old_params = DeltaParameters(old_rod_length, old_radius, old_homed_height, old_xstop,
+                                          old_ystop, old_zstop, old_xpos, old_ypos, old_zpos)
+        self.new_params = DeltaParameters(self.old_params)
+
+    def print_vector(self, v):
+        raise NotImplementedError()
+
+    def do_delta_calibration(self):
+        """
+        Runs the main delta calibration calculation.
+        :return:
+        """
+        if self.num_factors not in [3, 4, 6, 7]:
+            raise Exception("{} factors requested but only 3, 4, 6 and 7 are supported".format(self.num_factors))
+
+        if self.num_factors > self.num_points:
+            raise Exception("Need at least as many points as factors you want to calibrate")
+
+        if not self.probe_points_set:
+            raise Exception("Before running the delta calibration, the probe points need to be set")
+
+        # Transform the probing points to motor endpoints and store them in a matrix, so that we can do
+        # multiple iterations using the same data
+        probe_motor_positions = Matrix(self.num_points, 3)
+        corrections = [0] * self.num_points
+        initial_sum_of_squares = 0.0
+        for i in range(self.num_points):
+            corrections[i] = 0.0
+
+            xp = self.x_bed_probe_points[i]
+            yp = self.y_bed_probe_points[i]
+
+            machine_pos = [xp, yp, 0.0]
+
+            probe_motor_positions.base_matrix[i][0] = self.old_params.transform(machine_pos, 0)
+            probe_motor_positions.base_matrix[i][1] = self.old_params.transform(machine_pos, 1)
+            probe_motor_positions.base_matrix[i][2] = self.old_params.transform(machine_pos, 2)
+
+            initial_sum_of_squares += self.z_bed_probe_points[i] ** 2
+
+        logging.debug("Motor positions:{}".format(probe_motor_positions))
+
+        # Do 1 or more Newton-Raphson iterations
+        expected_rms_error = 0
+        for iteration in range(2):
+            # Build a Nx7 matrix of derivatives with respect to xa, xb, yc, za, zb, zc, diagonal.
+            derivative_matrix = Matrix(self.num_points, self.num_factors)
+            for i in range(self.num_points):
+                for j in range(self.num_factors):
+                    derivative_matrix.base_matrix[i][j] = self.old_params.compute_derivative(
+                        j,
+                        probe_motor_positions.base_matrix[i][0],
+                        probe_motor_positions.base_matrix[i][1],
+                        probe_motor_positions.base_matrix[i][2]
+                    )
+
+            logging.debug("Derivative matrix: {}".format(derivative_matrix))
+
+            # Now build the normal equations for least squares fitting
+            normal_matrix = Matrix(self.num_factors, self.num_factors + 1)
+            for i in range(self.num_factors):
+                for j in range(self.num_factors):
+                    temp = derivative_matrix.base_matrix[0][i] * derivative_matrix.base_matrix[0][j]
+                    for k in range(self.num_points):
+                        temp += derivative_matrix.base_matrix[k][i] * derivative_matrix[k][j]
+                    normal_matrix.base_matrix[i][j] = temp
+                temp = derivative_matrix[0][i] * -(self.z_bed_probe_points[0] + corrections[0])
+                for k in range(self.num_points):
+                    temp += derivative_matrix.base_matrix[k][i] * -(self.z_bed_probe_points[k] + corrections[k])
+                normal_matrix.base_matrix[i][self.num_factors] = temp
+
+            logging.debug("Normal matrix: {}".format(normal_matrix))
+
+            solution = normal_matrix.gauss_jordan()
+
+            for i in range(self.num_factors):
+                if math.isnan(solution[i]):
+                    raise Exception("Unable to calculate corrections. Please make sure "
+                                    "that the bed probe points are all distinct")
+
+            logging.debug("Solved matrix: {}".format(normal_matrix))
+
+            # Calculate the residuals for debugging
+            logging.debug("Solution: {}".format(solution))
+            residuals = []
+            for i in range(self.num_points):
+                r = self.z_bed_probe_points[i]
+                for j in range(self.num_factors):
+                    r += solution[j] * derivative_matrix.base_matrix[i][j]
+                residuals.append(r)
+
+            logging.debug("Residuals: {}".format(residuals))
+
+            self.new_params.clone(self.old_params)
+            self.new_params.adjust(self.num_factors, solution, self.normalise)
+
+            # Calculate the expected probe heights using the new parameters
+            expected_residuals = [0] * self.num_points
+            sum_of_squares = 0.0
+
+            for i in range(self.num_points):
+                for axis in range(3):
+                    probe_motor_positions.base_matrix[i][axis] += solution[axis]
+                new_z = self.new_params.inverse_transform(probe_motor_positions.base_matrix[i][0],
+                                                          probe_motor_positions.base_matrix[i][1],
+                                                          probe_motor_positions.base_matrix[i][2])
+                corrections[i] = new_z
+                expected_residuals[i] = self.z_bed_probe_points[i] + new_z
+                sum_of_squares += expected_residuals[i] ** 2
+            expected_rms_error = math.sqrt(sum_of_squares/self.num_points)
+            logging.debug("Expected probe error: {}".format(expected_residuals))
+
+            # Decide whether to do another iteration. Two is slightly better than one, but three doesn't
+            # improve things. Alternatively, we could stop when the expected RMS error is only slightly
+            # worse than the RMS of the residuals.
+        logging.info("Calibrated {} factors using {} points, deviation before {} after {}".format(
+            self.num_factors,
+            self.num_points,
+            math.sqrt(initial_sum_of_squares/self.num_points),
+            expected_rms_error
+        ))
+
+    def setpoints(self):
+        raise NotImplementedError()
+
+    def calc_probe_points(self, num_points, radius):
+        """
+        Calculates the probe points based on the number of points and the specified radius
+        :param num_points: number of points to probe
+        :param bed_radius: radius of those points
+        :return:
+        """
+
+        if num_points == 4:
+            for i in range(3):
+                self.x_bed_probe_points[i] = radius * math.sin((2*math.pi*i)/3)
+                self.y_bed_probe_points[i] = radius * math.cos((2 * math.pi * i) / 3)
+            self.x_bed_probe_points[3] = 0.0
+            self.y_bed_probe_points[3] = 0.0
+
+            self.probe_points_set = True
+        else:
+            if num_points >= 7:
+                for i in range(6):
+                    self.x_bed_probe_points[i] = radius * math.sin((2 * math.pi * i) / 6)
+                    self.y_bed_probe_points[i] = radius * math.cos((2 * math.pi * i) / 6)
+            if num_points >= 10:
+                for i in range(6,9):
+                    self.x_bed_probe_points[i] = radius / 2 * math.sin((2 * math.pi * i) / 6)
+                    self.y_bed_probe_points[i] = radius / 2 * math.cos((2 * math.pi * i) / 6)
+                self.x_bed_probe_points[9] = 0.0
+                self.y_bed_probe_points[9] = 0.0
+                self.probe_points_set = True
+            else:
+                self.x_bed_probe_points[6] = 0.0
+                self.y_bed_probe_points[6] = 0.0
+                self.probe_points_set = True
+
+
+    def get_parameters(self):
+        raise NotImplementedError()
+
+    def convert_incoming_endstops(self):
+        raise NotImplementedError()
+
+    def convert_outgoing_endstops(self):
+        raise NotImplementedError()
+
+    def set_new_parameters(self):
+        raise NotImplementedError()
+
+    def generate_commands(self):
+        raise NotImplementedError()
+
+    def calc(self):
+        raise NotImplementedError()
+
+    def copy_to_initial(self):
+        self.old_params.clone(self.new_params)
 
 
 
