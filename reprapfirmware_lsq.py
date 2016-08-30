@@ -1,5 +1,7 @@
-__author__ = 'Pedro'
+import math
+import logging
 
+__author__ = 'Pedro'
 """
 Delta printer least-squares calibration calculator
 
@@ -8,12 +10,8 @@ I have provided it as a service for those not running RepRapFirmware.
 You can choose to calibrate the following parameters:
 """
 
-import math
-import logging
-
 deg2rad = math.pi / 180
 
-firmware = "smoothieware"
 
 class Calibrator(object):
     initial_points = 7
@@ -27,7 +25,7 @@ class Matrix(object):
         self.base_matrix = [[0]*cols]*rows
 
     def swap_rows(self, i, j):
-        if i==j:
+        if i == j:
             return
         tmp = self.base_matrix[i]
         self.base_matrix[i] = self.base_matrix[j]
@@ -39,15 +37,16 @@ class Matrix(object):
         :return: solution vector
         """
         for i, row in enumerate(self.base_matrix):
-            #Swap the rows around for stable Gauss-Jordan elimination
+            # Swap the rows around for stable Gauss-Jordan elimination
             self.base_matrix[i:] = sorted(self.base_matrix[i:], key=lambda col: col[i], reverse=True)
 
-            #Use row i to eliminate the ith element from previous and subsequent rows
+            # Use row i to eliminate the ith element from previous and subsequent rows
             v = self.base_matrix[i][i]
             r = tuple(enumerate(self.base_matrix))
             for j, srow in r[i+1:] + r[:i]:
                 factor = srow[i]/v
-                self.base_matrix[j] = [self.base_matrix[j][k] - self.base_matrix[i][k]*factor for k, val in enumerate(self.base_matrix[i])]
+                self.base_matrix[j] = [self.base_matrix[j][k] - self.base_matrix[i][k]*factor for k, val in
+                                       enumerate(self.base_matrix[i])]
                 self.base_matrix[j][i] = 0
 
         return [d[i][-1]/d[i][i] for i, d in enumerate(self.base_matrix)]
@@ -56,8 +55,15 @@ class Matrix(object):
         for row in self.base_matrix:
             print(row)
 
+
 class DeltaParameters(object):
-    def __init__(self, diagonal, radius, height, xstop, ystop, zstop, xadj, yadj, zadj):
+    FIRMWARE_MARLIN = "Marlin"
+    FIRMWARE_MARLIN_RICH_CATTEL = "MarlinRC"
+    FIRMWARE_REPETIER = "Repetier"
+    FIRMWARE_REPRAPFIRMWARE = "RRF"
+    FIRMWARE_SMOOTHIEWARE = "Smoothieware"
+
+    def __init__(self, diagonal, radius, height, xstop, ystop, zstop, xadj, yadj, zadj, steps_per_mm=None):
         self.diagonal = diagonal
         self.radius = radius
         self.homed_height = height
@@ -67,40 +73,42 @@ class DeltaParameters(object):
         self.xadj = xadj
         self.yadj = yadj
         self.zadj = zadj
+
+        self.steps_per_mm = steps_per_mm    # Only used for Repetier firmware
+
+        self.firmware = DeltaParameters.FIRMWARE_SMOOTHIEWARE
+
         self.recalc()
 
-    def __init__(self, delta_params):
-        self.__init__(0, 0, 0, 0, 0, 0, 0, 0, 0)
-        self.clone(delta_params)
-
     def transform(self, machine_pos, axis):
-        return machine_pos[2] + math.sqrt(self.D2 - (machine_pos[0] - self.tower_x[axis])**2 - (machine_pos[1] - self.tower_y[axis])**2)
+        return machine_pos[2] + math.sqrt(self.D2 -
+                                          (machine_pos[0] - self.tower_x[axis])**2 -
+                                          (machine_pos[1] - self.tower_y[axis])**2)
 
-    def inverse_transform(self, Ha, Hb, Hc):
-        Fa = self.coreFa + Ha**2
-        Fb = self.coreFb + Hb**2
-        Fc = self.coreFc + Hc**2
+    def inverse_transform(self, ha, hb, hc):
+        fa = self.coreFa + ha ** 2
+        fb = self.coreFb + hb ** 2
+        fc = self.coreFc + hc ** 2
 
-        #Setup PQRSU such that x = -(S - uz)/P^, y = (P - Rz)/Q
-        P = (self.Xbc * Fa) + (self.Xca * Fb) + (self.Xab * Fc)
-        S = (self.Ybc * Fa) + (self.Yca * Fb) + (self.Yab * Fc)
+        # Setup PQRSU such that x = -(S - uz)/P^, y = (P - Rz)/Q
+        p = (self.Xbc * fa) + (self.Xca * fb) + (self.Xab * fc)
+        s = (self.Ybc * fa) + (self.Yca * fb) + (self.Yab * fc)
 
-        R = 2 * ((self.Xbc * Ha) + (self.Xca * Hb) + (self.Xab * Hc))
-        U = 2 * ((self.Ybc * Ha) + (self.Yca * Hb) + (self.Yab * Hc))
+        r = 2 * ((self.Xbc * ha) + (self.Xca * hb) + (self.Xab * hc))
+        u = 2 * ((self.Ybc * ha) + (self.Yca * hb) + (self.Yab * hc))
 
-        R2 = R ** 2
-        U2 = U ** 2
+        r2 = r ** 2
+        u2 = u ** 2
 
-        A = U2 + R2 + self.Q2
-        minusHalfB = S * U + P * R + Ha * self.Q2 + self.tower_x[0] * U * self.Q - self.tower_y[0] * R * self.Q
-        C = (S + self.tower_x[0] * self.Q) ** 2 + (P - self.tower_y[0] * self.Q) ** 2 + (Ha**2 - self.D2) * self.Q2
+        a = u2 + r2 + self.Q2
+        minus_half_b = s * u + p * r + ha * self.Q2 + self.tower_x[0] * u * self.Q - self.tower_y[0] * r * self.Q
+        c = (s + self.tower_x[0] * self.Q) ** 2 + (p - self.tower_y[0] * self.Q) ** 2 + (ha ** 2 - self.D2) * self.Q2
 
-        rslt = (minusHalfB - math.sqrt(minusHalfB**2 - A * C))/ A
+        rslt = (minus_half_b - math.sqrt(minus_half_b**2 - a * c)) / a
         if math.isnan(rslt):
             raise Exception("At least one probe point is not reachable. Please correct your "
                             "delta radius, diagonal rod length, or probe coordniates.")
         return rslt
-
 
     def recalc(self):
         self.tower_x = []
@@ -127,40 +135,40 @@ class DeltaParameters(object):
 
         # Calculate the base carriage height when the printer is homed
         temp_height = self.diagonal     # any sensible height will do here, probably even zero
-        self.homed_carriage_height = self.homed_height + temp_height + \
-                                     self.inverse_transform(temp_height, temp_height, temp_height)
+        self.homed_carriage_height = (self.homed_height + temp_height +
+                                      self.inverse_transform(temp_height, temp_height, temp_height))
 
     def compute_derivative(self, deriv, ha, hb, hc):
         perturb = 0.2   # perturbation amount in mm or degrees
-        hiParams = DeltaParameters(self.diagonal, self.radius, self.homed_height, self.xstop,
-                                   self.ystop, self.zstop, self.xadj, self.yadj, self.zadj)
-        loParams = DeltaParameters(self.diagonal, self.radius, self.homed_height, self.xstop,
-                                   self.ystop, self.zstop, self.xadj, self.yadj, self.zadj)
+        hi_params = DeltaParameters(self.diagonal, self.radius, self.homed_height, self.xstop,
+                                    self.ystop, self.zstop, self.xadj, self.yadj, self.zadj)
+        lo_params = DeltaParameters(self.diagonal, self.radius, self.homed_height, self.xstop,
+                                    self.ystop, self.zstop, self.xadj, self.yadj, self.zadj)
 
         if deriv == 3:
-            hiParams.radius += perturb
-            loParams.radius -= perturb
+            hi_params.radius += perturb
+            lo_params.radius -= perturb
         elif deriv == 4:
-            hiParams.xadj += perturb
-            loParams.xadj -= perturb
+            hi_params.xadj += perturb
+            lo_params.xadj -= perturb
         elif deriv == 5:
-            hiParams.yadj += perturb
-            loParams.yadj -= perturb
+            hi_params.yadj += perturb
+            lo_params.yadj -= perturb
         elif deriv == 6:
-            hiParams.diagonal += perturb
-            loParams.diagonal -= perturb
+            hi_params.diagonal += perturb
+            lo_params.diagonal -= perturb
 
-        hiParams.recalc()
-        loParams.recalc()
+        hi_params.recalc()
+        lo_params.recalc()
 
-        zLo = loParams.inverse_transform(ha - perturb if deriv == 0 else ha,
-                                         hb - perturb if deriv == 1 else hb,
-                                         hc - perturb if deriv == 2 else hc)
-        zHi = hiParams.inverse_transform(ha + perturb if deriv == 0 else ha,
-                                         hb + perturb if deriv == 1 else hb,
-                                         hc + perturb if deriv == 2 else hc)
+        z_lo = lo_params.inverse_transform(ha - perturb if deriv == 0 else ha,
+                                           hb - perturb if deriv == 1 else hb,
+                                           hc - perturb if deriv == 2 else hc)
+        z_hi = hi_params.inverse_transform(ha + perturb if deriv == 0 else ha,
+                                           hb + perturb if deriv == 1 else hb,
+                                           hc + perturb if deriv == 2 else hc)
 
-        return (zHi - zLo)/(2 * perturb)
+        return (z_hi - z_lo)/(2 * perturb)
 
     def normalise_endstop_adjustments(self):
         """
@@ -168,7 +176,7 @@ class DeltaParameters(object):
         changing the individual homed carriage heights
         :return:
         """
-        if firmware == "Marlin" or firmware == "MarlinRC" or firmware == "Repetier":
+        if self.firmware == "Marlin" or self.firmware == "MarlinRC" or self.firmware == "Repetier":
             eav = min(self.xstop, min(self.ystop, self.zstop))
         else:
             eav = (self.xstop + self.ystop + self.zstop)/3.0
@@ -191,9 +199,9 @@ class DeltaParameters(object):
         Diagonal rod length adjustment
         :return:
         """
-        old_carriage_height_A = self.homed_carriage_height + self.xstop     # save for later
+        old_carriage_height_a = self.homed_carriage_height + self.xstop     # save for later
 
-        #update endstop adjustments
+        # update endstop adjustments
         self.xstop += v[0]
         self.ystop += v[1]
         self.zstop += v[2]
@@ -215,7 +223,7 @@ class DeltaParameters(object):
         # Adjusting the diagonal and the tower positions affects the homed carriage height
         # We need to adjust homed_height to allow for this, to get the change that was requested in
         # the endstop corrections.
-        height_error = self.homed_carriage_height + self.xstop - old_carriage_height_A - v[0]
+        height_error = self.homed_carriage_height + self.xstop - old_carriage_height_a - v[0]
         self.homed_height -= height_error
         self.homed_carriage_height -= height_error
 
@@ -223,20 +231,48 @@ class DeltaParameters(object):
         self.__dict__.update(source_deltaparams.__dict__)
         self.recalc()
 
+    def get_endstops(self):
+
+        endstop_factor = 1.0
+
+        if self.firmware == self.FIRMWARE_REPETIER:
+            endstop_factor = self.steps_per_mm
+
+        try:
+            return [stop*endstop_factor for stop in [self.xstop, self.ystop, self.zstop]]
+        except TypeError:
+            raise TypeError("With Repetier firmware, steps_per_mm needs to be set in the constructor")
+
+    def set_endstops(self, xstop, ystop, zstop):
+        endstop_factor = 1.0
+
+        if self.firmware == self.FIRMWARE_REPETIER:
+            endstop_factor = self.steps_per_mm
+
+        try:
+            self.xstop = xstop / endstop_factor
+            self.ystop = ystop / endstop_factor
+            self.zstop = zstop / endstop_factor
+        except TypeError:
+            raise TypeError("With Repetier firmware, steps_per_mm needs to be set in the constructor")
+
 
 class Tuner(object):
     def __init__(self, old_rod_length, old_radius, old_homed_height, old_xstop, old_ystop, old_zstop,
-                 old_xpos, old_ypos, old_zpos):
+                 old_xpos, old_ypos, old_zpos, num_probe_points, probe_radius):
         self.num_factors = 6
         self.num_points = 7
         self.x_bed_probe_points = []
         self.y_bed_probe_points = []
         self.z_bed_probe_points = []
-        self.probe_points_set = False
+        self.probe_num_points = num_probe_points
+        self.probe_radius = probe_radius
+        self.calc_probe_points()
         self.normalise = True
         self.old_params = DeltaParameters(old_rod_length, old_radius, old_homed_height, old_xstop,
                                           old_ystop, old_zstop, old_xpos, old_ypos, old_zpos)
-        self.new_params = DeltaParameters(self.old_params)
+        self.new_params = DeltaParameters(old_rod_length, old_radius, old_homed_height, old_xstop,
+                                          old_ystop, old_zstop, old_xpos, old_ypos, old_zpos)
 
     def print_vector(self, v):
         raise NotImplementedError()
@@ -251,9 +287,6 @@ class Tuner(object):
 
         if self.num_factors > self.num_points:
             raise Exception("Need at least as many points as factors you want to calibrate")
-
-        if not self.probe_points_set:
-            raise Exception("Before running the delta calibration, the probe points need to be set")
 
         # Transform the probing points to motor endpoints and store them in a matrix, so that we can do
         # multiple iterations using the same data
@@ -298,9 +331,9 @@ class Tuner(object):
                 for j in range(self.num_factors):
                     temp = derivative_matrix.base_matrix[0][i] * derivative_matrix.base_matrix[0][j]
                     for k in range(self.num_points):
-                        temp += derivative_matrix.base_matrix[k][i] * derivative_matrix[k][j]
+                        temp += derivative_matrix.base_matrix[k][i] * derivative_matrix.base_matrix[k][j]
                     normal_matrix.base_matrix[i][j] = temp
-                temp = derivative_matrix[0][i] * -(self.z_bed_probe_points[0] + corrections[0])
+                temp = derivative_matrix.base_matrix[0][i] * -(self.z_bed_probe_points[0] + corrections[0])
                 for k in range(self.num_points):
                     temp += derivative_matrix.base_matrix[k][i] * -(self.z_bed_probe_points[k] + corrections[k])
                 normal_matrix.base_matrix[i][self.num_factors] = temp
@@ -356,57 +389,69 @@ class Tuner(object):
             expected_rms_error
         ))
 
-    def setpoints(self):
-        raise NotImplementedError()
-
-    def calc_probe_points(self, num_points, radius):
+    def calc_probe_points(self):
         """
         Calculates the probe points based on the number of points and the specified radius
-        :param num_points: number of points to probe
-        :param bed_radius: radius of those points
         :return:
         """
 
-        if num_points == 4:
+        if self.probe_num_points == 4:
             for i in range(3):
-                self.x_bed_probe_points[i] = radius * math.sin((2*math.pi*i)/3)
-                self.y_bed_probe_points[i] = radius * math.cos((2 * math.pi * i) / 3)
+                self.x_bed_probe_points[i] = self.probe_radius * math.sin((2*math.pi*i)/3)
+                self.y_bed_probe_points[i] = self.probe_radius * math.cos((2 * math.pi * i) / 3)
             self.x_bed_probe_points[3] = 0.0
             self.y_bed_probe_points[3] = 0.0
 
-            self.probe_points_set = True
         else:
-            if num_points >= 7:
+            if self.probe_num_points >= 7:
                 for i in range(6):
-                    self.x_bed_probe_points[i] = radius * math.sin((2 * math.pi * i) / 6)
-                    self.y_bed_probe_points[i] = radius * math.cos((2 * math.pi * i) / 6)
-            if num_points >= 10:
-                for i in range(6,9):
-                    self.x_bed_probe_points[i] = radius / 2 * math.sin((2 * math.pi * i) / 6)
-                    self.y_bed_probe_points[i] = radius / 2 * math.cos((2 * math.pi * i) / 6)
+                    self.x_bed_probe_points[i] = self.probe_radius * math.sin((2 * math.pi * i) / 6)
+                    self.y_bed_probe_points[i] = self.probe_radius * math.cos((2 * math.pi * i) / 6)
+            if self.probe_num_points >= 10:
+                for i in range(6, 9):
+                    self.x_bed_probe_points[i] = self.probe_radius / 2 * math.sin((2 * math.pi * i) / 6)
+                    self.y_bed_probe_points[i] = self.probe_radius / 2 * math.cos((2 * math.pi * i) / 6)
                 self.x_bed_probe_points[9] = 0.0
                 self.y_bed_probe_points[9] = 0.0
-                self.probe_points_set = True
+
             else:
                 self.x_bed_probe_points[6] = 0.0
                 self.y_bed_probe_points[6] = 0.0
-                self.probe_points_set = True
-
-
-    def get_parameters(self):
-        raise NotImplementedError()
-
-    def convert_incoming_endstops(self):
-        raise NotImplementedError()
-
-    def convert_outgoing_endstops(self):
-        raise NotImplementedError()
-
-    def set_new_parameters(self):
-        raise NotImplementedError()
 
     def generate_commands(self):
-        raise NotImplementedError()
+        m_665 = "M665 R{:.2f} L{:.2f}".format(self.new_params.radius, self.new_params.diagonal)
+        m_666 = "M666 X{:.2f} Y{:.2f} Z{:.2f}".format(self.new_params.xstop,
+                                                      self.new_params.ystop,
+                                                      self.new_params.zstop)
+        if self.new_params.firmware == DeltaParameters.FIRMWARE_REPRAPFIRMWARE:
+            m_665 += " H{:.2f} B{:.2f} X{:.2f} Y{:.2f} Z{:.2f}".format(self.new_params.homed_height,
+                                                                       self.probe_radius,
+                                                                       self.new_params.xadj,
+                                                                       self.new_params.yadj,
+                                                                       self.new_params.zadj)
+        elif self.new_params.firmware in [DeltaParameters.FIRMWARE_MARLIN,
+                                          DeltaParameters.FIRMWARE_MARLIN_RICH_CATTEL]:
+            m_666 += " R{:.2f} D{:.2f} H{:.2f} A{:.2f} B{:.2f} C{:.2f}".format(self.new_params.radius,
+                                                                               self.new_params.diagonal,
+                                                                               self.new_params.homed_height,
+                                                                               self.new_params.xadj,
+                                                                               self.new_params.yadj,
+                                                                               self.new_params.zadj)
+        elif self.new_params.firmware in [DeltaParameters.FIRMWARE_REPETIER,
+                                          DeltaParameters.FIRMWARE_SMOOTHIEWARE]:
+            m_665 += " D{:.2f} E{:.2f} H{:.2f} Z{:.2f}".format(self.new_params.xadj,
+                                                               self.new_params.yadj,
+                                                               self.new_params.zadj,
+                                                               self.new_params.homed_height)
+
+        commands = ""
+        if self.new_params.firmware != DeltaParameters.FIRMWARE_MARLIN_RICH_CATTEL:
+            commands += m_665 + "\n"
+        commands += m_666
+        if self.new_params.firmware == DeltaParameters.FIRMWARE_MARLIN:
+            commands += "\n; Set homed height {:.2f}mm in config.h".format(self.new_params.homed_height)
+            # Todo: Show the user a message instead of printing this in the command
+        return commands
 
     def calc(self):
         raise NotImplementedError()
@@ -415,9 +460,8 @@ class Tuner(object):
         self.old_params.clone(self.new_params)
 
 
-
 if __name__ == "__main__":
     m = Matrix(3, 4)
-    m.base_matrix = [[1, 0, 0, 2],[2,0,3,4],[3,3,3,5]]
-    m.gauss_jordan(3)
+    m.base_matrix = [[1, 0, 0, 2], [2, 0, 3, 4], [3, 3, 3, 5]]
+    m.gauss_jordan()
     pass
