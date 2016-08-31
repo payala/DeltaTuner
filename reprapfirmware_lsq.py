@@ -49,7 +49,7 @@ class Matrix(object):
                                        enumerate(self.base_matrix[i])]
                 self.base_matrix[j][i] = 0
 
-        return [d[i][-1]/d[i][i] for i, d in enumerate(self.base_matrix)]
+        return [d[-1]/d[i] for i, d in enumerate(self.base_matrix)]
 
     def __unicode__(self):
         for row in self.base_matrix:
@@ -63,7 +63,8 @@ class DeltaParameters(object):
     FIRMWARE_REPRAPFIRMWARE = "RRF"
     FIRMWARE_SMOOTHIEWARE = "Smoothieware"
 
-    def __init__(self, diagonal, radius, height, xstop, ystop, zstop, xadj, yadj, zadj, steps_per_mm=None):
+    def __init__(self, diagonal, radius, height, xstop, ystop, zstop, xadj, yadj, zadj,
+                 steps_per_mm=None, firmware=None):
         self.diagonal = diagonal
         self.radius = radius
         self.homed_height = height
@@ -76,7 +77,13 @@ class DeltaParameters(object):
 
         self.steps_per_mm = steps_per_mm    # Only used for Repetier firmware
 
-        self.firmware = DeltaParameters.FIRMWARE_SMOOTHIEWARE
+        if firmware is None:
+            firmware = DeltaParameters.FIRMWARE_SMOOTHIEWARE
+
+        if firmware == DeltaParameters.FIRMWARE_REPETIER and steps_per_mm is None:
+            raise ValueError("Repetier firmware requires specifying steps_per_mm")
+
+        self.firmware = firmware
 
         self.recalc()
 
@@ -86,6 +93,13 @@ class DeltaParameters(object):
                                           (machine_pos[1] - self.tower_y[axis])**2)
 
     def inverse_transform(self, ha, hb, hc):
+        """
+        Inverse kinematic method, only the z component of the result is returned.
+        :param ha: x carriage height
+        :param hb: y carriage height
+        :param hc: z carriage height
+        :return: z component of the real position
+        """
         fa = self.coreFa + ha ** 2
         fb = self.coreFb + hb ** 2
         fc = self.coreFc + hc ** 2
@@ -231,7 +245,7 @@ class DeltaParameters(object):
         self.__dict__.update(source_deltaparams.__dict__)
         self.recalc()
 
-    def get_endstops(self):
+    def convert_outgoing_endstops(self):
 
         endstop_factor = 1.0
 
@@ -239,22 +253,24 @@ class DeltaParameters(object):
             endstop_factor = self.steps_per_mm
 
         try:
-            return [stop*endstop_factor for stop in [self.xstop, self.ystop, self.zstop]]
+            self.xstop *= endstop_factor
+            self.ystop *= endstop_factor
+            self.zstop *= endstop_factor
         except TypeError:
-            raise TypeError("With Repetier firmware, steps_per_mm needs to be set in the constructor")
+            raise ValueError("With Repetier firmware, steps_per_mm needs to be set in the constructor")
 
-    def set_endstops(self, xstop, ystop, zstop):
+    def convert_incoming_endstops(self):
         endstop_factor = 1.0
 
         if self.firmware == self.FIRMWARE_REPETIER:
             endstop_factor = self.steps_per_mm
 
         try:
-            self.xstop = xstop / endstop_factor
-            self.ystop = ystop / endstop_factor
-            self.zstop = zstop / endstop_factor
+            self.xstop /= endstop_factor
+            self.ystop /= endstop_factor
+            self.zstop /= endstop_factor
         except TypeError:
-            raise TypeError("With Repetier firmware, steps_per_mm needs to be set in the constructor")
+            raise ValueError("With Repetier firmware, steps_per_mm needs to be set in the constructor")
 
 
 class Tuner(object):
@@ -267,17 +283,28 @@ class Tuner(object):
         self.z_bed_probe_points = []
         self.probe_num_points = num_probe_points
         self.probe_radius = probe_radius
-        self.calc_probe_points()
+        self._calc_probe_points()
         self.normalise = True
         self.old_params = DeltaParameters(old_rod_length, old_radius, old_homed_height, old_xstop,
                                           old_ystop, old_zstop, old_xpos, old_ypos, old_zpos)
         self.new_params = DeltaParameters(old_rod_length, old_radius, old_homed_height, old_xstop,
                                           old_ystop, old_zstop, old_xpos, old_ypos, old_zpos)
 
-    def print_vector(self, v):
-        raise NotImplementedError()
+    def set_firmware(self, firmware, steps_per_mm=None):
+        if firmware in [DeltaParameters.FIRMWARE_MARLIN, DeltaParameters.FIRMWARE_MARLIN_RICH_CATTEL,
+                        DeltaParameters.FIRMWARE_REPRAPFIRMWARE, DeltaParameters.FIRMWARE_SMOOTHIEWARE]:
+            self.new_params.firmware = firmware
+            self.old_params.firmware = firmware
+        elif firmware == DeltaParameters.FIRMWARE_REPETIER:
+            if steps_per_mm is None:
+                raise ValueError("Repetier firmware requires specifying steps_per_mm")
+            self.new_params.steps_per_mm = steps_per_mm
+            self.new_params.firmware = firmware
+            self.old_params.steps_per_mm = steps_per_mm
+            self.old_params.firmware = firmware
 
-    def do_delta_calibration(self):
+
+    def _do_delta_calibration(self):
         """
         Runs the main delta calibration calculation.
         :return:
@@ -388,8 +415,12 @@ class Tuner(object):
             math.sqrt(initial_sum_of_squares/self.num_points),
             expected_rms_error
         ))
+        return (self.num_factors,
+                self.num_points,
+                math.sqrt(initial_sum_of_squares/self.num_points),
+                expected_rms_error)
 
-    def calc_probe_points(self):
+    def _calc_probe_points(self):
         """
         Calculates the probe points based on the number of points and the specified radius
         :return:
@@ -418,7 +449,7 @@ class Tuner(object):
                 self.x_bed_probe_points[6] = 0.0
                 self.y_bed_probe_points[6] = 0.0
 
-    def generate_commands(self):
+    def _generate_commands(self):
         m_665 = "M665 R{:.2f} L{:.2f}".format(self.new_params.radius, self.new_params.diagonal)
         m_666 = "M666 X{:.2f} Y{:.2f} Z{:.2f}".format(self.new_params.xstop,
                                                       self.new_params.ystop,
@@ -444,17 +475,30 @@ class Tuner(object):
                                                                self.new_params.zadj,
                                                                self.new_params.homed_height)
 
-        commands = ""
-        if self.new_params.firmware != DeltaParameters.FIRMWARE_MARLIN_RICH_CATTEL:
-            commands += m_665 + "\n"
-        commands += m_666
+        commands = (m_665, m_666)
         if self.new_params.firmware == DeltaParameters.FIRMWARE_MARLIN:
-            commands += "\n; Set homed height {:.2f}mm in config.h".format(self.new_params.homed_height)
+            print("\n; Set homed height {:.2f}mm in config.h".format(self.new_params.homed_height))
             # Todo: Show the user a message instead of printing this in the command
         return commands
 
-    def calc(self):
-        raise NotImplementedError()
+    def calc(self, recalc=True):
+        """
+        Runs the full parameter tuning calculation
+        :param recalc: If False, it will not take the results of the last calculation as
+        the starting conditions for the next iteration. Default: False.
+        :return:
+        """
+        if recalc:
+            self.old_params.clone(self.new_params)
+
+        self.old_params.convert_incoming_endstops()
+        rslt = self._do_delta_calibration()
+        dev_before = rslt[2]
+        dev_after = rslt[3]
+        self.old_params.convert_outgoing_endstops()
+        self.new_params.convert_outgoing_endstops()
+        return self._generate_commands()
+
 
     def copy_to_initial(self):
         self.old_params.clone(self.new_params)
