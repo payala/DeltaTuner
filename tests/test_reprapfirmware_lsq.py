@@ -95,7 +95,50 @@ class DeltaParametersTest(unittest.TestCase):
             norm_tp = [c-(sum(tp)/3) for c in tp]
             self.assertEqual([dp.xstop, dp.ystop, dp.zstop], norm_tp)
 
-    
+
+class TunerTest(unittest.TestCase):
+    def test_calc(self):
+        expected_probe_points = [
+            [0,     94,     0.2],
+            [81.41, 47,     0.5],
+            [81.41, -47,    0.7],
+            [0,     -94,    0.9],
+            [-81.41,-47,    0.5],
+            [-81.41,47,     0.1],
+            [0,     0,      0.2]
+        ]
+        t = Tuner(270.26, 106.04, 209.6, -0.01, 0.55, -0.53, 0.6, 0.62, 0, 94, 7, 6)
+
+        probe_points = t.get_probe_points()
+
+        for i, ex_pt in enumerate(expected_probe_points):
+            # Check that probe points are calculated correctly
+            for j, coord in enumerate(ex_pt[0:2]):
+                self.assertAlmostEqual(ex_pt[j], probe_points[i][j], delta=1e-2)
+
+        for i, ex_pt in enumerate(expected_probe_points):
+            # Write the expected z errors
+            probe_points[i][2] = ex_pt[2]
+
+        t.set_probe_errors(probe_points)
+
+        cmd, dev_before, dev_after = t.calc()
+
+        self.assertEqual("M665 R105.22 L270.26 D-0.01 E0.53 H0.00 Z209.79", cmd[0])
+        self.assertEqual("M666 X-0.05 Y0.31 Z-0.25", cmd[1])
+
+        self.assertAlmostEqual(0.52, dev_before, delta=1e-2)
+        self.assertAlmostEqual(0.02, dev_after, delta=1e-2)
+
+        self.assertAlmostEqual(-0.05, t.new_params.xstop, delta=1e-2)
+        self.assertAlmostEqual(0.31, t.new_params.ystop, delta=1e-2)
+        self.assertAlmostEqual(-0.25, t.new_params.zstop, delta=1e-2)
+        self.assertAlmostEqual(270.26, t.new_params.diagonal, delta=1e-2)
+        self.assertAlmostEqual(105.22, t.new_params.radius, delta=1e-2)
+        self.assertAlmostEqual(209.79, t.new_params.homed_height, delta=1e-2)
+        self.assertAlmostEqual(-0.01, t.new_params.xadj, delta=1e-2)
+        self.assertAlmostEqual(0.53, t.new_params.yadj, delta=1e-2)
+        self.assertAlmostEqual(0.00, t.new_params.zadj, delta=1e-2)
 
 if __name__ == "__main__":
     unittest.main()

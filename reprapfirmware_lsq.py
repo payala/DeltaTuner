@@ -22,7 +22,7 @@ class Matrix(object):
     base_matrix = None
 
     def __init__(self, rows, cols):
-        self.base_matrix = [[0]*cols]*rows
+        self.base_matrix = [[0 for x in range(cols)] for y in range(rows)]
 
     def swap_rows(self, i, j):
         if i == j:
@@ -132,7 +132,7 @@ class DeltaParameters(object):
         self.tower_x.append(+(self.radius * math.cos((30 - self.yadj) * deg2rad)))
         self.tower_y.append(-(self.radius * math.sin((30 - self.yadj) * deg2rad)))
         self.tower_x.append(-(self.radius * math.sin(self.zadj * deg2rad)))
-        self.tower_y.append(-(self.radius * math.cos(self.zadj * deg2rad)))
+        self.tower_y.append(+(self.radius * math.cos(self.zadj * deg2rad)))
 
         self.Xbc = self.tower_x[2] - self.tower_x[1]
         self.Xca = self.tower_x[0] - self.tower_x[2]
@@ -149,7 +149,7 @@ class DeltaParameters(object):
 
         # Calculate the base carriage height when the printer is homed
         temp_height = self.diagonal     # any sensible height will do here, probably even zero
-        self.homed_carriage_height = (self.homed_height + temp_height +
+        self.homed_carriage_height = (self.homed_height + temp_height -
                                       self.inverse_transform(temp_height, temp_height, temp_height))
 
     def compute_derivative(self, deriv, ha, hb, hc):
@@ -175,12 +175,12 @@ class DeltaParameters(object):
         hi_params.recalc()
         lo_params.recalc()
 
-        z_lo = lo_params.inverse_transform(ha - perturb if deriv == 0 else ha,
-                                           hb - perturb if deriv == 1 else hb,
-                                           hc - perturb if deriv == 2 else hc)
         z_hi = hi_params.inverse_transform(ha + perturb if deriv == 0 else ha,
                                            hb + perturb if deriv == 1 else hb,
                                            hc + perturb if deriv == 2 else hc)
+        z_lo = lo_params.inverse_transform(ha - perturb if deriv == 0 else ha,
+                                           hb - perturb if deriv == 1 else hb,
+                                           hc - perturb if deriv == 2 else hc)
 
         return (z_hi - z_lo)/(2 * perturb)
 
@@ -247,10 +247,12 @@ class DeltaParameters(object):
 
     def convert_outgoing_endstops(self):
 
-        endstop_factor = 1.0
-
-        if self.firmware == self.FIRMWARE_REPETIER:
+        if self.firmware == self.FIRMWARE_REPRAPFIRMWARE:
+            endstop_factor = 1.0
+        elif self.firmware == self.FIRMWARE_REPETIER:
             endstop_factor = self.steps_per_mm
+        else:
+            endstop_factor = -1.0
 
         try:
             self.xstop *= endstop_factor
@@ -262,26 +264,30 @@ class DeltaParameters(object):
     def convert_incoming_endstops(self):
         endstop_factor = 1.0
 
-        if self.firmware == self.FIRMWARE_REPETIER:
-            endstop_factor = self.steps_per_mm
+        if self.firmware == self.FIRMWARE_REPRAPFIRMWARE:
+            endstop_factor = 1.0
+        elif self.firmware == self.FIRMWARE_REPETIER:
+            endstop_factor = 1.0/self.steps_per_mm
+        else:
+            endstop_factor = -1.0
 
         try:
-            self.xstop /= endstop_factor
-            self.ystop /= endstop_factor
-            self.zstop /= endstop_factor
+            self.xstop *= endstop_factor
+            self.ystop *= endstop_factor
+            self.zstop *= endstop_factor
         except TypeError:
             raise ValueError("With Repetier firmware, steps_per_mm needs to be set in the constructor")
 
 
 class Tuner(object):
     def __init__(self, old_rod_length, old_radius, old_homed_height, old_xstop, old_ystop, old_zstop,
-                 old_xpos, old_ypos, old_zpos, num_probe_points, probe_radius):
-        self.num_factors = 6
-        self.num_points = 7
+                 old_xpos, old_ypos, old_zpos, probe_radius=64, num_probe_points=7, num_factors=6):
+        self.num_factors = num_factors
+        self.num_points = num_probe_points
         self.x_bed_probe_points = []
         self.y_bed_probe_points = []
         self.z_bed_probe_points = []
-        self.probe_num_points = num_probe_points
+
         self.probe_radius = probe_radius
         self._calc_probe_points()
         self.normalise = True
@@ -357,11 +363,11 @@ class Tuner(object):
             for i in range(self.num_factors):
                 for j in range(self.num_factors):
                     temp = derivative_matrix.base_matrix[0][i] * derivative_matrix.base_matrix[0][j]
-                    for k in range(self.num_points):
+                    for k in range(1, self.num_points):
                         temp += derivative_matrix.base_matrix[k][i] * derivative_matrix.base_matrix[k][j]
                     normal_matrix.base_matrix[i][j] = temp
                 temp = derivative_matrix.base_matrix[0][i] * -(self.z_bed_probe_points[0] + corrections[0])
-                for k in range(self.num_points):
+                for k in range(1, self.num_points):
                     temp += derivative_matrix.base_matrix[k][i] * -(self.z_bed_probe_points[k] + corrections[k])
                 normal_matrix.base_matrix[i][self.num_factors] = temp
 
@@ -387,7 +393,8 @@ class Tuner(object):
 
             logging.debug("Residuals: {}".format(residuals))
 
-            self.new_params.clone(self.old_params)
+            if iteration == 0:
+                self.new_params.clone(self.old_params)
             self.new_params.adjust(self.num_factors, solution, self.normalise)
 
             # Calculate the expected probe heights using the new parameters
@@ -426,7 +433,11 @@ class Tuner(object):
         :return:
         """
 
-        if self.probe_num_points == 4:
+        self.x_bed_probe_points = [0] * self.num_points
+        self.y_bed_probe_points = [0] * self.num_points
+        self.z_bed_probe_points = [0] * self.num_points
+
+        if self.num_points == 4:
             for i in range(3):
                 self.x_bed_probe_points[i] = self.probe_radius * math.sin((2*math.pi*i)/3)
                 self.y_bed_probe_points[i] = self.probe_radius * math.cos((2 * math.pi * i) / 3)
@@ -434,11 +445,11 @@ class Tuner(object):
             self.y_bed_probe_points[3] = 0.0
 
         else:
-            if self.probe_num_points >= 7:
+            if self.num_points >= 7:
                 for i in range(6):
                     self.x_bed_probe_points[i] = self.probe_radius * math.sin((2 * math.pi * i) / 6)
                     self.y_bed_probe_points[i] = self.probe_radius * math.cos((2 * math.pi * i) / 6)
-            if self.probe_num_points >= 10:
+            if self.num_points >= 10:
                 for i in range(6, 9):
                     self.x_bed_probe_points[i] = self.probe_radius / 2 * math.sin((2 * math.pi * i) / 6)
                     self.y_bed_probe_points[i] = self.probe_radius / 2 * math.cos((2 * math.pi * i) / 6)
@@ -497,11 +508,41 @@ class Tuner(object):
         dev_after = rslt[3]
         self.old_params.convert_outgoing_endstops()
         self.new_params.convert_outgoing_endstops()
-        return self._generate_commands()
+        return [self._generate_commands(), dev_before, dev_after]
 
 
-    def copy_to_initial(self):
+    def _copy_to_initial(self):
         self.old_params.clone(self.new_params)
+
+    def get_probe_points(self):
+        """
+        Calculates and returns an array with each probe point coordinates by rows.
+        [
+            [ p1_x, p1_y, p1_z],
+            [ p2_x, p2_y, p2_z],
+            ...
+            [ pn_x, pn_y, pn_z],
+        ]
+
+        z points will be zero, and should be filled with the height error at each point,
+        obtained in the test.
+        :return:
+        """
+        self._calc_probe_points()
+        return [[self.x_bed_probe_points[i],
+                 self.y_bed_probe_points[i],
+                 self.z_bed_probe_points[i]]
+                for i, p in enumerate(self.x_bed_probe_points)]
+
+    def set_probe_errors(self, probe_points):
+        """
+        Sets the z component of the probe points after testing. See get_probe_points
+        :param probe_points: the same bidimensional list that 'get_probe_points' returned,
+        filled with the z error components obtained in the probing.
+        :return:
+        """
+
+        self.z_bed_probe_points = [-probe[2] for probe in probe_points]
 
 
 if __name__ == "__main__":
