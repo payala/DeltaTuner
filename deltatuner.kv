@@ -9,6 +9,7 @@
 #:set col_data (141/255, 78/255, 78/255, 1)
 
 <DeltaTunerMain>:
+    err_bars: dt_error_bars
     canvas.before:
         Color:
             rgba: col_bg
@@ -19,15 +20,51 @@
         orientation: "vertical"
         BoxLayout:
             orientation: "horizontal"
-            DTErrorBar:
-            Button:
-            Button:
-            DTErrorBar:
+            DTErrors
+                id: dt_error_bars
         BoxLayout:
             orientation: "horizontal"
             Label:
                 text: "Hola"
 
+
+<DTErrors>:
+    e0: er0
+    e1: er1
+    e2: er2
+    e3: er3
+    e4: er4
+    e5: er5
+    e6: er6
+    e7: er7
+    BoxLayout:
+        orientation: "horizontal"
+        spacing: 10
+        DTErrorVertAxis
+        DTErrorBar:
+            id: er0
+        DTErrorBar:
+            id: er1
+        DTErrorBar:
+            id: er2
+        DTErrorBar:
+            id: er3
+        DTErrorBar:
+            id: er4
+        DTErrorBar:
+            id: er5
+        DTErrorBar:
+            id: er6
+        DTErrorBar:
+            id: er7
+
+
+<DTErrorVertAxis>:
+    size_hint: None, None
+    size: self.fwidth, 300
+    canvas:
+        Color:
+            rgba: col_fg
 
 <DTErrorBar>:
     size_hint: None, None
@@ -39,22 +76,25 @@
             points: 10, 0, 10, 300
             width: 4
         Color:
-            rgb: cs.hls_to_rgb(col_gn_marker_hsla[0], col_gn_marker_hsla[2], col_gn_marker_hsla[1])
+            rgb: self.highlight_color
         Line:
-            points: 10, 0, 10, 300
-            width: 1
-    DTErrorMarker:
-        pos: 10, 0
-        value: 50
+            points: 10, self.highlight_start, 10, self.highlight_end
+            width: 1.2
 
 <DTErrorMarker>:
     size_hint: None, None
-    size: 16, 16
+    size: 20, 16
     canvas:
+        Color:
+            rgb: self.ball_color
         Line:
-            points: -self.width/2, self.height/2 + self.value, self.width/2, self.height/2 + self.value
+            points:
+                (self.width/2 - self.radius,
+                self.height/2 + self.value,
+                self.width/2 + self.radius,
+                self.height/2 + self.value)
             width: 1
-        Line:
-            circle: 0, self.height/2 + self.value, 8
-            width: 2
+        SmoothLine:
+            circle: self.width/2, self.height/2 + self.value, self.radius
+            width: 1.2
 
