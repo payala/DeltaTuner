@@ -1,0 +1,60 @@
+#:kivy 1.9.0
+
+#:import cs colorsys
+
+#:set col_bg (43/255, 43/255, 43/255, 1)
+#:set col_fg (60/255, 63/255, 65/255, 1)
+#:set col_gn_marker_hsla (86/255, 1, 63/255, 1)
+#:set col_header (78/255, 80/255, 141/255, 1)
+#:set col_data (141/255, 78/255, 78/255, 1)
+
+<DeltaTunerMain>:
+    canvas.before:
+        Color:
+            rgba: col_bg
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    BoxLayout:
+        orientation: "vertical"
+        BoxLayout:
+            orientation: "horizontal"
+            DTErrorBar:
+            Button:
+            Button:
+            DTErrorBar:
+        BoxLayout:
+            orientation: "horizontal"
+            Label:
+                text: "Hola"
+
+
+<DTErrorBar>:
+    size_hint: None, None
+    size: 20, 300
+    canvas:
+        Color:
+            rgba: col_fg
+        Line:
+            points: 10, 0, 10, 300
+            width: 4
+        Color:
+            rgb: cs.hls_to_rgb(col_gn_marker_hsla[0], col_gn_marker_hsla[2], col_gn_marker_hsla[1])
+        Line:
+            points: 10, 0, 10, 300
+            width: 1
+    DTErrorMarker:
+        pos: 10, 0
+        value: 50
+
+<DTErrorMarker>:
+    size_hint: None, None
+    size: 16, 16
+    canvas:
+        Line:
+            points: -self.width/2, self.height/2 + self.value, self.width/2, self.height/2 + self.value
+            width: 1
+        Line:
+            circle: 0, self.height/2 + self.value, 8
+            width: 2
+

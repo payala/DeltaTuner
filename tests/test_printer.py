@@ -85,6 +85,22 @@ class PrinterTest(unittest.TestCase):
         self.assertEqual(-30, p.z)
         self.assertEqual(-40, p.e)
 
+    def test_printer_on(self):
+        p = Printer("COMX")
+
+        p.ser.stub_add_received_bytes(b"ok\n")
+        p.printer_on()
+
+        self.assertEqual(b"M80\n", p.ser.stub_get_sent_bytes())
+
+    def test_printer_off(self):
+        p = Printer("COMX")
+
+        p.ser.stub_add_received_bytes(b"ok\n")
+        p.printer_off()
+
+        self.assertEqual(b"M81\n", p.ser.stub_get_sent_bytes())
+
 
 class SerialStub(object):
     def __init__(self, port=None, baudrate=None, parity=None, stopbits=None, bytesize=None, timeout=None):

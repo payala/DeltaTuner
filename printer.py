@@ -148,3 +148,9 @@ class Printer(object):
                 self.z = float(sect[2:])
             if "E" in sect:
                 self.e = float(sect[2:])
+
+    def printer_on(self):
+        self.send_command(b"M80")
+
+    def printer_off(self):
+        self.send_command(b"M81")
