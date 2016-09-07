@@ -66,13 +66,19 @@ class DTErrors(BoxLayout):
 
 
 class DTErrorVertAxis(RelativeLayout):
-    mark_length = 8
-    space_btw_marks = 10
-    total_axis_space = 300
-    fwidth = 20
+    mark_length = NumericProperty(8)
+    total_axis_space = NumericProperty(300)
+    space_btw_marks = NumericProperty(10)
+    fwidth = NumericProperty(20)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.bind(height=self.on_resize)
+        self.redraw()
+
+    def redraw(self):
+        self.canvas.clear()
         with self.canvas:
             Color(*COL_FG)
             total_ticks = int(self.total_axis_space/self.space_btw_marks)
@@ -100,6 +106,12 @@ class DTErrorVertAxis(RelativeLayout):
                           size=[s * 0.9 for s in texture_size],
                           pos=(0, i * 5 *self.space_btw_marks - 2))
 
+    def on_resize(self, width, height):
+        self.mark_length = 8
+        self.total_axis_space = float(self.height)
+        self.space_btw_marks = float(self.total_axis_space) / 30.0
+        self.fwidth = 20
+        self.redraw()
 
 
 class DTErrorBar(RelativeLayout):

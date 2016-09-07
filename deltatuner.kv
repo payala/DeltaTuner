@@ -63,7 +63,7 @@
 
 
 <DTErrors>:
-    size_hint: None, None
+    size_hint: None, 1
     width: 280
     height: 340
     padding: 20, 20, 20, 20
@@ -98,20 +98,21 @@
 
 
 <DTErrorVertAxis>:
-    size_hint: None, None
-    size: self.fwidth, 300
+    size_hint: None, 1
+    width: self.fwidth
+    #height: 300
     canvas:
         Color:
             rgba: col_fg
 
 <DTErrorBar>:
-    size_hint: None, None
-    size: 20, 300
+    size_hint: None, 1
+    width: 20
     canvas:
         Color:
             rgba: col_fg
         Line:
-            points: 10, 0, 10, 300
+            points: 10, 0, 10, self.height
             width: 4
         Color:
             rgb: self.highlight_color
