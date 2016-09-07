@@ -8,6 +8,8 @@ from kivy.properties import NumericProperty, ObjectProperty, ListProperty
 from kivy.clock import Clock
 from kivy.graphics import *
 from kivy.core.text import Label as CoreLabel
+from kivy.uix.dropdown import DropDown
+from kivy.uix.button import Button
 import colorsys
 
 Window.size = (700, 420)
@@ -19,7 +21,7 @@ COL_HEADER = (78/255, 80/255, 141/255, 1)
 COL_DATA = (141/255, 78/255, 78/255, 1)
 
 
-class DeltaTunerMain(Widget):
+class DeltaTunerMain(BoxLayout):
     err_bars = ObjectProperty(None)
 
     def __init__(self, *args, **kwargs):
@@ -29,14 +31,19 @@ class DeltaTunerMain(Widget):
 
 
     def initialize(self, dt):
-        self.err_bars.add_point(0, 90)
-        self.err_bars.add_point(0, 40)
-        self.err_bars.add_point(1, 90)
-        self.err_bars.add_point(2, 90)
+        # self.err_bars.add_point(0, 90)
+        # self.err_bars.add_point(0, 40)
+        # self.err_bars.add_point(1, 90)
+        # self.err_bars.add_point(2, 90)
         # self.err_bars.add_point(60)
         # self.err_bars.add_point(30)
         # self.err_bars.add_point(10)
         # self.err_bars.add_point(5)
+        pass
+
+
+class ComPortDropDown(DropDown):
+    pass
 
 
 class DTErrors(BoxLayout):

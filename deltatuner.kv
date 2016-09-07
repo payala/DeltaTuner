@@ -16,19 +16,57 @@
         Rectangle:
             pos: self.pos
             size: self.size
+    orientation: "vertical"
     BoxLayout:
-        orientation: "vertical"
-        BoxLayout:
-            orientation: "horizontal"
-            DTErrors
-                id: dt_error_bars
-        BoxLayout:
-            orientation: "horizontal"
-            Label:
-                text: "Hola"
+        orientation: "horizontal"
+        ComPortDropDown:
+    BoxLayout:
+        size_hint_y: None
+        height: 10
+        height: sum([child.height for child in self.children])
+        on_children: self.height = sum([child.height for child in self.children])
+        orientation: "horizontal"
+        DTErrors:
+            id: dt_error_bars
+
+
+
+<ComPortDropDown>:
+    Button:
+        id: main_btn
+        text: "COM port"
+        on_release: dropdown.open(self)
+        size_hint_y: None
+        height: '48dp'
+
+    DropDown:
+        id: dropdown
+        on_parent: self.dismiss()
+        on_select: btn.text = '{}'.format(args[1])
+
+        Button:
+            text: 'First Item'
+            size_hint_y: None
+            height: '48dp'
+            on_release: dropdown.select('First Item')
+
+        Label:
+            text: 'Second Item'
+            size_hint_y: None
+            height: '48dp'
+
+        Button:
+            text: 'Third Item'
+            size_hint_y: None
+            height: '48dp'
+            on_release: dropdown.select('Third Item')
 
 
 <DTErrors>:
+    size_hint: None, None
+    width: 280
+    height: 340
+    padding: 20, 20, 20, 20
     e0: er0
     e1: er1
     e2: er2
@@ -37,26 +75,26 @@
     e5: er5
     e6: er6
     e7: er7
-    BoxLayout:
-        orientation: "horizontal"
-        spacing: 10
-        DTErrorVertAxis
-        DTErrorBar:
-            id: er0
-        DTErrorBar:
-            id: er1
-        DTErrorBar:
-            id: er2
-        DTErrorBar:
-            id: er3
-        DTErrorBar:
-            id: er4
-        DTErrorBar:
-            id: er5
-        DTErrorBar:
-            id: er6
-        DTErrorBar:
-            id: er7
+    orientation: "horizontal"
+    spacing: 10
+    DTErrorVertAxis
+    DTErrorBar:
+        id: er0
+    DTErrorBar:
+        id: er1
+    DTErrorBar:
+        id: er2
+    DTErrorBar:
+        id: er3
+    DTErrorBar:
+        id: er4
+    DTErrorBar:
+        id: er5
+    DTErrorBar:
+        id: er6
+    DTErrorBar:
+        id: er7
+
 
 
 <DTErrorVertAxis>:
