@@ -10,6 +10,7 @@
 
 <DeltaTunerMain>:
     err_bars: dt_error_bars
+    com_port: cpdd
     canvas.before:
         Color:
             rgba: col_bg
@@ -18,8 +19,12 @@
             size: self.size
     orientation: "vertical"
     BoxLayout:
+        size_hint: 1, 1
+        pos_hint_x: 1
+        pos_hint_y: 1
         orientation: "horizontal"
-        ComPortDropDown:
+        ComPortSpinner:
+            id: cpdd
     BoxLayout:
         size_hint_y: None
         height: 10
@@ -31,35 +36,31 @@
 
 
 
-<ComPortDropDown>:
-    Button:
-        id: main_btn
-        text: "COM port"
-        on_release: dropdown.open(self)
-        size_hint_y: None
-        height: '48dp'
+#<ComPortDropDown>:
+#    dropdown: dd
+#    btn: main_btn
+#    orientation: "vertical"
+#    Button:
+#        id: main_btn
+#        text: "COM port ?"
+#        on_release: root.drop_down_open()
+#        size_hint_y: None
+#        height: '48dp'
+#
+#    DropDown:
+#        id: dd
+#        #auto_dismiss: True
+#        on_parent: self.dismiss()
+#        on_select: main_btn.text = '{}'.format(args[1])
 
-    DropDown:
-        id: dropdown
-        on_parent: self.dismiss()
-        on_select: btn.text = '{}'.format(args[1])
+<ComPortSpinner>:
+    on_press: self.drop_down_open()
+    on_text: self.on_dropdown_select()
+    text: "COM port ?"
+    size_hint: None, None
+    size: 100, 44
+    pos_hint: {'center_x': .5, 'center_y': .5}
 
-        Button:
-            text: 'First Item'
-            size_hint_y: None
-            height: '48dp'
-            on_release: dropdown.select('First Item')
-
-        Label:
-            text: 'Second Item'
-            size_hint_y: None
-            height: '48dp'
-
-        Button:
-            text: 'Third Item'
-            size_hint_y: None
-            height: '48dp'
-            on_release: dropdown.select('Third Item')
 
 
 <DTErrors>:

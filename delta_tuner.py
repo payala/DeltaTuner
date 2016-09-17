@@ -10,7 +10,11 @@ from kivy.graphics import *
 from kivy.core.text import Label as CoreLabel
 from kivy.uix.dropdown import DropDown
 from kivy.uix.button import Button
+from kivy.uix.spinner import Spinner
 import colorsys
+import serial
+import serial.tools.list_ports
+import printer
 
 Window.size = (700, 420)
 
@@ -23,11 +27,15 @@ COL_DATA = (141/255, 78/255, 78/255, 1)
 
 class DeltaTunerMain(BoxLayout):
     err_bars = ObjectProperty(None)
+    com_port = ObjectProperty()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         Clock.schedule_once(self.initialize, 0.01)
+
+        self.current_port = None
+        self.com_port.app = self
 
 
     def initialize(self, dt):
@@ -41,10 +49,110 @@ class DeltaTunerMain(BoxLayout):
         # self.err_bars.add_point(5)
         pass
 
+    def open_com_port(self, port):
+        if self.current_port != port:
+            self.current_port = port
+            self.ptr = printer.Printer(self.current_port)
 
-class ComPortDropDown(DropDown):
-    pass
 
+class ComPortDropDown(BoxLayout):
+
+    dropdown = ObjectProperty()
+    btn = ObjectProperty()
+
+    def drop_down_open(self):
+        self.refresh_port_list()
+        self.dropdown.open(self.btn)
+
+    def on_dropdown_select(self, data):
+        self.app.open_com_port(data)
+        self.btn.background_color = (0, 1, 0, 1)
+        self.btn.text = data
+        self.dropdown.select(data)
+
+    def refresh_port_list(self):
+        self.dropdown.clear_widgets()
+        new_list = self.get_available_ports()
+        for port in new_list:
+            btn = Button(text=port[0], size_hint_y=None, height=44)
+            if 'Open' in port[-1]:
+                btn.background_color = (0.7, 0, 0, 1)
+            else:
+                btn.background_color = (0, 0.7, 0, 1)
+            if port[0] == self.app.current_port:
+                btn.background_color = (0, 0, 0.7, 1)
+            btn.bind(on_release=lambda btn: self.on_dropdown_select(btn.text))
+            self.dropdown.add_widget(btn)
+
+    def get_available_ports(self):
+        """ Lists serial port names
+
+            :raises EnvironmentError:
+                On unsupported or unknown platforms
+            :returns:
+                A list of the serial ports available on the system
+        """
+        ports = [list(port) + ['Open'] for port in list(serial.tools.list_ports.comports())]
+
+        for port in ports:
+            try:
+                s = serial.Serial(port[0])
+                s.close()
+                port[-1] = 'Closed'
+            except (OSError, serial.SerialException):
+                pass
+        return ports
+
+class ComPortSpinner(Spinner):
+    def drop_down_open(self):
+        self.refresh_port_list()
+
+    def on_dropdown_select(self):
+        data = self.text
+        try:
+            self.app.open_com_port(data)
+        except serial.serialutil.SerialException:
+            self.text = "select other"
+
+        # self.btn.background_color = (0, 1, 0, 1)
+        # self.btn.text = data
+        # self.dropdown.select(data)
+
+    def refresh_port_list(self):
+        self.values = []
+        new_list = self.get_available_ports()
+        for port in new_list:
+            self.values.append(port[0])
+
+        # for port in new_list:
+        #     btn = Button(text=port[0], size_hint_y=None, height=44)
+        #     if 'Open' in port[-1]:
+        #         btn.background_color = (0.7, 0, 0, 1)
+        #     else:
+        #         btn.background_color = (0, 0.7, 0, 1)
+        #     if port[0] == self.app.current_port:
+        #         btn.background_color = (0, 0, 0.7, 1)
+        #     btn.bind(on_release=lambda btn: self.on_dropdown_select(btn.text))
+        #     self.dropdown.add_widget(btn)
+
+    def get_available_ports(self):
+        """ Lists serial port names
+
+            :raises EnvironmentError:
+                On unsupported or unknown platforms
+            :returns:
+                A list of the serial ports available on the system
+        """
+        ports = [list(port) + ['Open'] for port in list(serial.tools.list_ports.comports())]
+
+        for port in ports:
+            try:
+                s = serial.Serial(port[0])
+                s.close()
+                port[-1] = 'Closed'
+            except (OSError, serial.SerialException):
+                pass
+        return ports
 
 class DTErrors(BoxLayout):
     e0 = ObjectProperty(None)
