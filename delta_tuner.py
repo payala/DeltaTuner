@@ -10,7 +10,7 @@ from kivy.graphics import *
 from kivy.core.text import Label as CoreLabel
 from kivy.uix.dropdown import DropDown
 from kivy.uix.button import Button
-from kivy.uix.spinner import Spinner
+from kivy.uix.spinner import Spinner, SpinnerOption
 import colorsys
 import serial
 import serial.tools.list_ports
@@ -103,7 +103,18 @@ class ComPortDropDown(BoxLayout):
                 pass
         return ports
 
+
+class ColoredSpinnerOption(SpinnerOption):
+    def __init__(self, *args, **kwargs):
+        text, col = kwargs.get('text', ('', (0, 0, 0, 1)))
+        kwargs['text'] = text
+        super().__init__(*args, **kwargs)
+        self.background_color = col
+
+
 class ComPortSpinner(Spinner):
+    option_cls = ObjectProperty(ColoredSpinnerOption)
+
     def drop_down_open(self):
         self.refresh_port_list()
 
@@ -114,26 +125,18 @@ class ComPortSpinner(Spinner):
         except serial.serialutil.SerialException:
             self.text = "select other"
 
-        # self.btn.background_color = (0, 1, 0, 1)
-        # self.btn.text = data
-        # self.dropdown.select(data)
-
     def refresh_port_list(self):
         self.values = []
         new_list = self.get_available_ports()
         for port in new_list:
-            self.values.append(port[0])
+            if 'Open' in port[-1]:
+                color = (0.7, 0, 0, 1)
+            else:
+                color = (0, 0.7, 0, 1)
+            if port[0] == self.app.current_port:
+                color = (0, 0, 0.7, 1)
 
-        # for port in new_list:
-        #     btn = Button(text=port[0], size_hint_y=None, height=44)
-        #     if 'Open' in port[-1]:
-        #         btn.background_color = (0.7, 0, 0, 1)
-        #     else:
-        #         btn.background_color = (0, 0.7, 0, 1)
-        #     if port[0] == self.app.current_port:
-        #         btn.background_color = (0, 0, 0.7, 1)
-        #     btn.bind(on_release=lambda btn: self.on_dropdown_select(btn.text))
-        #     self.dropdown.add_widget(btn)
+            self.values.append((port[0], color))
 
     def get_available_ports(self):
         """ Lists serial port names
