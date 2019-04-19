@@ -1,5 +1,6 @@
 import serial
 import datetime
+import re
 
 
 class Printer(object):
@@ -31,6 +32,30 @@ class Printer(object):
         self.z = None  # position of z axis
         self.e = None  # position of extruder
         self.feedrate = 10  # feedrate (mm/s)
+
+
+        ###############################################
+        # Printer geometry parameters
+        ###############################################
+
+        self.geom_rod_length = None
+        self.geom_radius = None
+        self.geom_homed_height = None
+        # Endstop corrections are offsets applied to each axis' endstops
+        self.geom_endstop_corrections = [None, None, None]
+
+        # Tower angular position corrections are the angle deviation to
+        # compensate for each tower
+        self.geom_angular_pos_correction = [None, None, None]
+
+        self.geom_labels = {
+            'geom_rod_length': 'L',
+            'geom_radius': 'R',
+            'geom_homed_height': 'Max Z',
+            'geom_endstop_corrections': ['X', 'Y', 'Z'],
+            'geom_angular_pos_correction': ['D', 'E', 'H'],
+        }
+        self.re_param = None
 
     def connect(self):
         self.ser.close()
@@ -154,3 +179,50 @@ class Printer(object):
 
     def printer_off(self):
         self.send_command(b"M81")
+
+    def parse_options(self, option_string):
+        """
+        Parses options obtained from printer responses such as M665, M666
+        :param option_string: raw string as received from the printer
+        :return a dict with options as keys and option values as dict values
+        """
+
+        # Regex is: there are two types of groups:
+        # 1.- Values (  [\d\.-]+  )
+        # 2.- Labels (  [\w\s]*   )
+        # Capture pairs of Label, Value separated by optional ':' and space
+        # Labels are groups that are between two values. To match with the
+        # first label, the first value is optional, and to avoid capturing,
+        # it is non-capturing '(?:'
+        #
+        if isinstance(option_string, bytes):
+            option_string = option_string.decode('ascii')
+
+        param = r"(?:[\d\.-]+)?([\w\s]*):?\s+([\d\.-]+)\s*"
+
+        self.re_param = re.compile(param)
+
+        ret_dict = {}
+
+        for match in self.re_param.findall(option_string):
+            ret_dict[match[0].strip()] = float(match[1])
+
+        return ret_dict
+
+    def update_printer_geometry(self):
+        """ Fetches printer geometry via M666 and M665 and populates geometry params """
+        m665 = self.send_command(b"M665")
+        params = self.parse_options(m665)
+
+        m666 = self.send_command(b"M666")
+        params.update(self.parse_options(m666))
+
+        for attr, labels in self.geom_labels.items():
+            if isinstance(labels, list):
+                # vector label
+                if all([l in params.keys() for l in labels]):
+                    setattr(self, attr, [params[l] for l in labels])
+            else:
+                # scalar label
+                if labels in params.keys():
+                    setattr(self, attr, params[labels])

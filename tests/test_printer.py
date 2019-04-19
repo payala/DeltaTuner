@@ -6,8 +6,16 @@ import time
 
 class PrinterTest(unittest.TestCase):
     def setUp(self):
-        serial.Serial = SerialStub
+        self.real_serial = serial.Serial
+        self.set_serial_stub()
 
+    def set_serial_real(self):
+        """ Sets Serial.serial to the real serial port """
+        serial.Serial = self.real_serial
+
+    def set_serial_stub(self):
+        """ Sets all calls to Serial.serial to the serial mock"""
+        serial.Serial = SerialStub
 
     def test_printer_setup(self):
         p = Printer("COMX")
@@ -100,6 +108,40 @@ class PrinterTest(unittest.TestCase):
         p.printer_off()
 
         self.assertEqual(b"M81\n", p.ser.stub_get_sent_bytes())
+
+    def test_printer_update_geometry(self):
+        #self.set_serial_real()
+        p = Printer("COM3")
+
+        arm_length = 260.69 # L
+        arm_radius = 104.14 # R
+        tower_offsets = [0.001, 0.002, 0.003]  # [A, B, C]
+        tower_angles = [0.01, 0.02, 0.03]  # [D, E, H]
+        z_height = 203.45  # Max Z
+
+        endstop_adjustments = [-0.120, 0.700, -0.580]  # [X, Y, Z]
+
+
+        # Set response to M665
+        p.ser.stub_add_received_bytes('A:   {} B:   {} C:   {} D:  {} E:   {} '
+                                      'H:   {} L: {} R: {} Max Z  {} \r\nok\r\n'.format(
+                                            *tower_offsets, *tower_angles, arm_length,
+                                            arm_radius, z_height
+                                      ).encode())
+        # Set response to M666
+        p.ser.stub_add_received_bytes('X: {} Y: {} Z: {}\nok\r\n'.format(
+            *endstop_adjustments).encode())
+
+        p.update_printer_geometry()
+
+        self.assertAlmostEqual(arm_length, p.geom_rod_length)
+        self.assertAlmostEqual(arm_radius, p.geom_radius)
+        self.assertAlmostEqual(z_height, p.geom_homed_height)
+        for i, v in enumerate(tower_angles):
+            self.assertAlmostEqual(tower_angles[i], p.geom_angular_pos_correction[i])
+            self.assertAlmostEqual(endstop_adjustments[i], p.geom_endstop_corrections[i])
+
+
 
 
 class SerialStub(object):
