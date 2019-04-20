@@ -228,3 +228,13 @@ class Printer(object):
                 # scalar label
                 if labels in params.keys():
                     setattr(self, attr, params[labels])
+
+    def for_tuner(self, probe_radius):
+        return (self.geom_rod_length, self.geom_radius, self.geom_homed_height,
+                *self.geom_endstop_corrections, *self.geom_angular_pos_correction,
+                probe_radius)
+
+    def probe_point(self, x, y, z=1):
+        self.send_command(b"G1 X0 Y0 Z100 F30000")
+        self.send_command(b"G28")
+        self.send_command("G1 X{} Y{} Z{} F15000".format(x, y, z).encode())
