@@ -91,6 +91,8 @@ class Printer(object):
         :param command: Command to send
         :return: Response to the command, including final 'ok'
         """
+        if isinstance(command, str):
+            command = command.encode()
         response = b''
         self.ser.flushInput()
         self.ser.write(command + b"\n")
