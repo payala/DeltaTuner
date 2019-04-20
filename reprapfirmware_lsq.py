@@ -538,7 +538,8 @@ class Tuner(object):
         """
         Sets the z component of the probe points after testing. See get_probe_points
         :param probe_points: the same bidimensional list that 'get_probe_points' returned,
-        filled with the z error components obtained in the probing.
+        filled with the z error components obtained in the probing. Z values should be positive
+        when the nozzle is too high, and negative when the nozzle is too low.
         :return:
         """
 
