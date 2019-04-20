@@ -30,6 +30,16 @@ def main(radius, com_port):
     radius = opts['radius'] = radius or opts.get('radius')
     com_port = opts['com_port'] = com_port or opts.get('com_port')
 
+    if radius is None:
+        radius = opts['radius'] = click.prompt(
+            "Enter the radius of the probe points:",
+            type=float
+        )
+    if com_port is None:
+        com_port = opts['com_port'] = click.prompt(
+            "Enter the COM port to connect to the printer"
+        )
+
     # Save options for future calls
     fp = open(json_filename, 'w')
     json.dump(opts, fp)
