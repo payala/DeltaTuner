@@ -93,7 +93,7 @@ def main(radius, com_port):
                     last_operation = "set_z_err"
                     printer.get_current_position()
 
-                    click.echo("z_err: {}".format(printer.z - feeler_gage_thickness))
+                    click.echo("z_err: {:.2f}".format(printer.z - feeler_gage_thickness))
                     last_z_err = -(printer.z - feeler_gage_thickness) / num_probes
                     z_err += last_z_err
                     probe_num += 1
@@ -104,10 +104,11 @@ def main(radius, com_port):
                         probe_num -= 1
                     last_operation = "undo"
 
-            click.echo("Average z_err for point: {}".format(z_err))
+            click.echo("Average z_err for point: {:.3f}".format(z_err))
 
             probe_pts[i][2] = z_err
 
+        printer.home()
         click.echo("\nZ errors:")
         pp = pprint.PrettyPrinter(indent=4)
         pp.pprint(probe_pts)
