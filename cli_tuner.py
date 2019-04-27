@@ -19,7 +19,10 @@ feeler_gage_thickness = 0.1  # Thickness of the feeler gage in mm
 @click.command()
 @click.option('--radius', help='Probing points will be in a circle of this radius.')
 @click.option('--com_port', help='COM port to which the printer is connected')
-def main(radius, com_port):
+@click.option('--hot_cal', help='If set, will do a hot calibration. The value passed will '
+                                'be the temperature to which the bed should be heated '
+                                'during the calibration')
+def main(radius, com_port, hot_cal):
 
     # Check for existing options
     try:
@@ -29,6 +32,7 @@ def main(radius, com_port):
 
     radius = opts['radius'] = radius or opts.get('radius')
     com_port = opts['com_port'] = com_port or opts.get('com_port')
+    hot_cal = opts['hot_cal'] = hot_cal or opts.get('hot_cal')
     cal_report = opts.setdefault('cal_report', [])
 
     if radius is None:
@@ -53,6 +57,14 @@ def main(radius, com_port):
     printer.connect()
     printer.send_command(b"M80")     # Power supply on
     printer.send_command(b"G28")     # home
+    if hot_cal is not None:
+        hclim = [30, 100]
+        if not isinstance(hot_cal, (int, float)) or hot_cal < hclim[0] or hot_cal > hclim[1]:
+            click.echo("hot_cal should be a number between {} and {}".format(*hclim))
+            return
+        click.echo("Warming up to {}C".format(hot_cal))
+        printer.send_command("M190 S{}".format(hot_cal).encode())
+
     while True:
         printer.update_printer_geometry()
         tuner = Tuner(*printer.for_tuner(radius))
