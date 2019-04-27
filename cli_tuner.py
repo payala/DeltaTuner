@@ -1,3 +1,5 @@
+import datetime
+
 import click
 import os
 import json
@@ -27,6 +29,7 @@ def main(radius, com_port):
 
     radius = opts['radius'] = radius or opts.get('radius')
     com_port = opts['com_port'] = com_port or opts.get('com_port')
+    cal_report = opts.setdefault('cal_report', [])
 
     if radius is None:
         radius = opts['radius'] = click.prompt(
@@ -113,6 +116,13 @@ def main(radius, com_port):
 
         cmd, dev_before, dev_after = tuner.calc()
 
+        cal_report.append({
+            'datetime': datetime.datetime.now().replace(microsecond=0).isoformat(),
+            'dev_before': dev_before,
+            'dev_after': dev_after,
+            'cmds': cmd,
+            'saved': False
+        })
         save_opts(opts)
 
         click.echo("Commands to run for correction:\n{}\n{}".format(*cmd))
@@ -123,6 +133,7 @@ def main(radius, com_port):
             save_choice = click.confirm("Do you want to save the result of this calibration to Flash?")
             if save_choice:
                 click.echo("Saving to Flash with M500 command")
+                cal_report[-1]['saved'] = True
                 save_opts(opts)
                 printer.send_command(b"M500")
 
