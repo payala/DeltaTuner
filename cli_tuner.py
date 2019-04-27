@@ -21,9 +21,7 @@ def main(radius, com_port):
 
     # Check for existing options
     try:
-        fp = open(json_filename, 'r')
-        opts = json.load(fp)
-        fp.close()
+        opts = load_opts()
     except Exception:
         opts = {}
 
@@ -41,9 +39,7 @@ def main(radius, com_port):
         )
 
     # Save options for future calls
-    fp = open(json_filename, 'w')
-    json.dump(opts, fp)
-    fp.close()
+    save_opts(opts)
 
     # Start calibration process
     choice = click.confirm("Do you want to start the calibration process with a radius of {}mm?".format(radius))
@@ -117,6 +113,8 @@ def main(radius, com_port):
 
         cmd, dev_before, dev_after = tuner.calc()
 
+        save_opts(opts)
+
         click.echo("Commands to run for correction:\n{}\n{}".format(*cmd))
 
         choice = click.confirm("Deviation: {} (before: {}), do you want "
@@ -125,6 +123,7 @@ def main(radius, com_port):
             save_choice = click.confirm("Do you want to save the result of this calibration to Flash?")
             if save_choice:
                 click.echo("Saving to Flash with M500 command")
+                save_opts(opts)
                 printer.send_command(b"M500")
 
             click.echo("Exiting")
@@ -137,6 +136,17 @@ def main(radius, com_port):
         printer.send_command(cmd[1].encode())
 
 
+def save_opts(opts):
+    fp = open(json_filename, 'w')
+    json.dump(opts, fp)
+    fp.close()
+
+
+def load_opts():
+    fp = open(json_filename, 'r')
+    opts = json.load(fp)
+    fp.close()
+    return opts
 
 
 # def calibration_step()
